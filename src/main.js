@@ -101,12 +101,7 @@ function startApp() {
       const password = document.querySelector('#loginPassword').value
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) {
-        const details = [
-          error.message,
-          error.code ? `code: ${error.code}` : '',
-          error.status ? `HTTP ${error.status}` : '',
-        ].filter(Boolean).join(' · ')
-        renderLogin(`로그인 실패: ${details || '알 수 없는 인증 오류'}`)
+        renderLogin('이메일 또는 비밀번호를 확인해 주세요.')
       }
     }
   }
