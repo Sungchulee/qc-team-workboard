@@ -48,7 +48,7 @@
       </div>
       <div class="tool-right">
         <div class="segmented" aria-label="보기 방식"><button class="active" data-view="team">팀 전체</button><button data-view="mine">내 업무</button></div>
-        <input class="search" id="search" placeholder="품목·시험항목 검색" aria-label="업무 검색" />
+        <input class="search" id="search" placeholder="업무명·구분 검색" aria-label="업무 검색" />
         <select class="filter" id="statusFilter" aria-label="상태 필터"><option value="all">상태 전체</option><option value="plan">예정</option><option value="working">진행 중</option><option value="review">검토 대기</option><option value="delay">지연·이슈</option><option value="done">완료</option></select>
       </div>
     </section>
@@ -62,8 +62,8 @@
       <div class="form-grid">
         <div class="field"><label for="employee">담당자</label><select id="employee" required></select></div>
         <div class="field"><label for="date">예정일</label><input type="date" id="date" required /></div>
-        <div class="field full"><label for="title">품목 / 업무명</label><input id="title" required placeholder="예: RG0126H010 유연물질" /></div>
-        <div class="field"><label for="testItem">시험항목</label><input id="testItem" placeholder="예: Related substances" /></div>
+        <div class="field full"><label for="title">업무명</label><input id="title" required placeholder="예: 시료 전처리" /></div>
+        <div class="field"><label for="testItem">업무 구분</label><input id="testItem" placeholder="예: 분석 / 문서 / 교육" /></div>
         <div class="field"><label for="status">진행상태</label><select id="status"><option value="plan">예정</option><option value="working">진행 중</option><option value="review">검토 대기</option><option value="delay">지연·이슈</option><option value="done">완료</option></select></div>
         <div class="field"><label for="priority">우선순위</label><select id="priority"><option value="보통">보통</option><option value="긴급">긴급</option><option value="낮음">낮음</option></select></div>
         <div class="field full"><label for="memo">비고</label><textarea id="memo" placeholder="인계사항 또는 간단한 메모"></textarea></div>
@@ -74,22 +74,22 @@
   <div class="toast" id="toast" role="status"></div>
   <script>
     const employees=[
-      {id:'kim',name:'김지우',role:'제품분석',mine:true},
-      {id:'park',name:'박민수',role:'제품분석'},
-      {id:'choi',name:'최서연',role:'제품분석'},
-      {id:'lee',name:'이준호',role:'제품분석'},
-      {id:'jung',name:'정하늘',role:'제품분석'}
+      {id:'analyst1',name:'분석자 1',role:'제품분석',mine:true},
+      {id:'analyst2',name:'분석자 2',role:'제품분석'},
+      {id:'analyst3',name:'분석자 3',role:'제품분석'},
+      {id:'analyst4',name:'분석자 4',role:'제품분석'},
+      {id:'analyst5',name:'분석자 5',role:'제품분석'}
     ];
     const mondayOf=d=>{const x=new Date(d);const day=x.getDay()||7;x.setHours(12,0,0,0);x.setDate(x.getDate()-day+1);return x};
     const iso=d=>{const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`};
     const addDays=(d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x};
     const baseMonday=mondayOf(new Date());
     const demo=[
-      ['kim',0,'RG0126H010 검체 전처리','유연물질','working','F26-0837'],['kim',1,'RG0126H010 HPLC 분석','유연물질','plan','F26-0837'],['kim',2,'RG0126H010 적분','유연물질','plan','F26-0837'],['kim',3,'결과 검토 요청','유연물질','review','F26-0837'],
-      ['park',0,'LTWRS2601 표준액 조제','함량','done','LTWRS2601'],['park',1,'AD26-0650 ND 분석','함량','working','AD26-0650'],['park',3,'분석결과 정리','함량','plan','AD26-0650'],
-      ['choi',0,'BN-3201 장비점검 확인','시험 준비','plan',''],['choi',2,'HLC-3228 시스템적합성','관련물질','delay','BN-3201'],['choi',4,'재분석 여부 확인','관련물질','review','BN-3201'],
-      ['lee',1,'ND01 표준액 조제','정량','working','ND01'],['lee',2,'ND01 시료 분석','정량','plan','ND01'],['lee',3,'ND01 적분','정량','plan','ND01'],
-      ['jung',0,'안정성 검체 확인','함량','done','STB26-0068'],['jung',2,'안정성 HPLC 분석','함량','working','STB26-0068'],['jung',4,'시험기록 정리','함량','plan','STB26-0068']
+      ['analyst1',0,'품목 A 시료 전처리','분석','working',''],['analyst1',1,'품목 A 기기 분석','분석','plan',''],['analyst1',2,'결과 확인','분석','plan',''],['analyst1',3,'결과 검토 요청','검토','review',''],
+      ['analyst2',0,'표준액 조제','분석 준비','done',''],['analyst2',1,'품목 B 분석','분석','working',''],['analyst2',3,'분석결과 정리','문서','plan',''],
+      ['analyst3',0,'장비점검 확인','시험 준비','plan',''],['analyst3',2,'시스템적합성 확인','분석','delay',''],['analyst3',4,'재분석 여부 확인','검토','review',''],
+      ['analyst4',1,'시료 조제','분석 준비','working',''],['analyst4',2,'시료 분석','분석','plan',''],['analyst4',3,'데이터 처리','분석','plan',''],
+      ['analyst5',0,'검체 수량 확인','시험 준비','done',''],['analyst5',2,'기기 분석','분석','working',''],['analyst5',4,'업무기록 정리','문서','plan','']
     ].map((t,i)=>({id:'demo-'+i,employee:t[0],date:iso(addDays(baseMonday,t[1])),title:t[2],testItem:t[3],status:t[4],priority:'보통',memo:''}));
     let tasks=(JSON.parse(localStorage.getItem('qc-workboard-tasks')||'null')||demo).map(({batch,...task})=>task);
     let weekStart=new Date(baseMonday);let selectedDate=iso(new Date());let period='week';let view='team';
