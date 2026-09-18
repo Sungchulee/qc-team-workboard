@@ -123,8 +123,8 @@ using (is_active = true or id = auth.uid() or public.is_admin());
 
 drop policy if exists "profiles_update" on public.profiles;
 create policy "profiles_update" on public.profiles for update to authenticated
-using (id = auth.uid() or public.is_admin())
-with check (id = auth.uid() or public.is_admin());
+using (public.is_admin())
+with check (public.is_admin());
 
 drop policy if exists "tasks_read" on public.tasks;
 create policy "tasks_read" on public.tasks for select to authenticated using (true);
@@ -153,6 +153,12 @@ revoke all on public.task_change_logs from anon;
 grant select, update on public.profiles to authenticated;
 grant select, insert, update, delete on public.tasks to authenticated;
 grant select on public.task_change_logs to authenticated;
+
+revoke execute on function public.set_updated_at() from public, anon, authenticated;
+revoke execute on function public.handle_new_user() from public, anon, authenticated;
+revoke execute on function public.log_task_change() from public, anon, authenticated;
+revoke execute on function public.is_admin() from public, anon;
+grant execute on function public.is_admin() to authenticated;
 
 -- 첫 관리자 계정을 생성한 뒤 실제 이메일로 바꿔 별도로 실행:
 -- update public.profiles set role = 'admin' where email = 'your-email@example.com';
