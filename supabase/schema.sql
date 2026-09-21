@@ -8,7 +8,7 @@ create table if not exists public.profiles (
   email text not null unique,
   display_name text not null,
   role text not null default 'user' check (role in ('admin', 'user')),
-  is_active boolean not null default true,
+  is_active boolean not null default false,
   display_order integer not null default 100,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -62,18 +62,140 @@ create trigger tasks_set_updated_at before update on public.tasks
 for each row execute function public.set_updated_at();
 
 create or replace function public.handle_new_user()
+returns trigger language plpgsql security definer set search_path = public as $
+declare
+  requested_name text;
+  next_order integer;
+begin
+  if lower(split_part(new.email, '@', 2)) <> 'ysls.co.kr' then
+    raise exception 'Only @ysls.co.kr email addresses are allowed';
+  end if;
+
+  requested_name := btrim(coalesce(new.raw_user_meta_data ->> 'display_name', ''));
+  if requested_name !~ '^[가-힣]{2,10}
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created after insert on auth.users
+for each row execute function public.handle_new_user();
+
+insert into public.profiles (id, email, display_name)
+select id, email,
+  coalesce(nullif(raw_user_meta_data ->> 'display_name', ''), split_part(email, '@', 1))
+from auth.users
+where email is not null
+on conflict (id) do nothing;
+
+create or replace function public.is_admin()
+returns boolean language sql stable security definer set search_path = public as $
+  select exists (
+    select 1 from public.profiles
+    where id = auth.uid() and role = 'admin' and is_active = true
+  );
+$;
+
+create or replace function public.is_active_user()
+returns boolean language sql stable security definer set search_path = public as $
+  select exists (
+    select 1 from public.profiles
+    where id = auth.uid() and is_active = true
+  );
+$;
+
+create or replace function public.log_task_change()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
-  insert into public.profiles (id, email, display_name)
+  insert into public.task_change_logs (task_id, action, changed_by, old_data, new_data)
   values (
-    new.id,
-    new.email,
-    coalesce(nullif(new.raw_user_meta_data ->> 'display_name', ''), split_part(new.email, '@', 1))
-  )
+    coalesce(new.id, old.id),
+    tg_op,
+    auth.uid(),
+    case when tg_op in ('UPDATE', 'DELETE') then to_jsonb(old) end,
+    case when tg_op in ('INSERT', 'UPDATE') then to_jsonb(new) end
+  );
+  return coalesce(new, old);
+end;
+$$;
+
+drop trigger if exists tasks_change_log on public.tasks;
+create trigger tasks_change_log after insert or update or delete on public.tasks
+for each row execute function public.log_task_change();
+
+alter table public.profiles enable row level security;
+alter table public.tasks enable row level security;
+alter table public.task_change_logs enable row level security;
+
+drop policy if exists "profiles_read" on public.profiles;
+create policy "profiles_read" on public.profiles for select to authenticated
+using (id = auth.uid() or (public.is_active_user() and is_active = true) or public.is_admin());
+
+drop policy if exists "profiles_update" on public.profiles;
+create policy "profiles_update" on public.profiles for update to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+drop policy if exists "tasks_read" on public.tasks;
+create policy "tasks_read" on public.tasks for select to authenticated
+using (public.is_active_user());
+
+drop policy if exists "tasks_create" on public.tasks;
+create policy "tasks_create" on public.tasks for insert to authenticated
+with check (
+  public.is_active_user()
+  and created_by = auth.uid()
+  and (assignee_id = auth.uid() or public.is_admin())
+);
+
+drop policy if exists "tasks_update" on public.tasks;
+create policy "tasks_update" on public.tasks for update to authenticated
+using (
+  public.is_active_user()
+  and (created_by = auth.uid() or assignee_id = auth.uid() or public.is_admin())
+)
+with check (
+  public.is_active_user()
+  and (created_by = auth.uid() or assignee_id = auth.uid() or public.is_admin())
+);
+
+drop policy if exists "tasks_delete" on public.tasks;
+create policy "tasks_delete" on public.tasks for delete to authenticated
+using (
+  public.is_active_user()
+  and (created_by = auth.uid() or assignee_id = auth.uid() or public.is_admin())
+);
+
+drop policy if exists "logs_read" on public.task_change_logs;
+create policy "logs_read" on public.task_change_logs for select to authenticated
+using (public.is_admin());
+
+revoke all on public.profiles from anon;
+revoke all on public.tasks from anon;
+revoke all on public.task_change_logs from anon;
+
+grant select, update on public.profiles to authenticated;
+grant select, insert, update, delete on public.tasks to authenticated;
+grant select on public.task_change_logs to authenticated;
+
+revoke execute on function public.set_updated_at() from public, anon, authenticated;
+revoke execute on function public.handle_new_user() from public, anon, authenticated;
+revoke execute on function public.log_task_change() from public, anon, authenticated;
+revoke execute on function public.is_admin() from public, anon;
+grant execute on function public.is_admin() to authenticated;
+revoke execute on function public.is_active_user() from public, anon;
+grant execute on function public.is_active_user() to authenticated;
+
+-- 첫 관리자 계정을 생성한 뒤 실제 이메일로 바꿔 별도로 실행:
+-- update public.profiles set role = 'admin' where email = 'your-email@example.com';
+ then
+    requested_name := split_part(lower(new.email), '@', 1);
+  end if;
+
+  select coalesce(max(display_order), 0) + 1 into next_order from public.profiles;
+  insert into public.profiles (id, email, display_name, role, is_active, display_order)
+  values (new.id, lower(new.email), requested_name, 'user', false, next_order)
   on conflict (id) do nothing;
   return new;
 end;
-$$;
+$;
 
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created after insert on auth.users
