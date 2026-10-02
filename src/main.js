@@ -103,7 +103,7 @@ function startApp() {
               <button class="primary" type="submit">로그인</button>
             `}
           </form>
-          <p class="login-note">${signup ? '회사 이메일 인증 후 바로 이용할 수 있습니다.' : '등록된 직원 계정만 이용할 수 있습니다.'} 공식 시험기록과 결과는 LIMS 및 관련 기록서에서 관리합니다.</p>
+          <p class="login-note">${signup ? '회사 이메일로 가입하면 즉시 이용할 수 있습니다.' : '등록된 직원 계정만 이용할 수 있습니다.'} 공식 시험기록과 결과는 LIMS 및 관련 기록서에서 관리합니다.</p>
         </section>
       </main>`
 
@@ -152,8 +152,11 @@ function startApp() {
       renderLogin(duplicate ? '이미 가입된 이메일입니다.' : '가입 신청에 실패했습니다. 입력 내용을 확인해 주세요.', 'signup')
       return
     }
-    if (data.session) await supabase.auth.signOut()
-    renderLogin('회원가입이 완료되었습니다. 이메일 인증 후 로그인해 주세요.')
+    if (data.session) {
+      await handleSession(data.session)
+      return
+    }
+    renderLogin('회원가입이 완료되었습니다. 이메일 확인 후 로그인해 주세요.')
   }
 
   function renderWorkspace() {
