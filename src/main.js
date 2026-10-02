@@ -25,6 +25,7 @@ function startApp() {
     session: null,
     profile: null,
     profiles: [],
+    adminProfiles: [],
     tasks: [],
     weekStart: mondayOf(new Date()),
     selectedDate: iso(new Date()),
@@ -66,7 +67,7 @@ function startApp() {
     }
     if (!profile.is_active) {
       await supabase.auth.signOut()
-      renderLogin('비활성화된 계정입니다. 관리자에게 문의해 주세요.')
+      renderLogin('가입 승인 대기 중이거나 비활성화된 계정입니다. 관리자에게 문의해 주세요.')
       return
     }
 
@@ -75,22 +76,43 @@ function startApp() {
     await loadData()
   }
 
-  function renderLogin(message = '') {
+  function renderLogin(message = '', mode = 'login') {
+    const signup = mode === 'signup'
     app.innerHTML = `
       <main class="login-page">
         <section class="login-card">
           <div class="logo"><span class="logo-mark">QC</span><div><h1>QC Team Workboard</h1><p>제품분석1팀 · Non-GMP 업무 보조</p></div></div>
-          <form id="loginForm">
+          <div class="auth-tabs"><button id="showLogin" class="${signup ? '' : 'active'}" type="button">로그인</button><button id="showSignup" class="${signup ? 'active' : ''}" type="button">회원가입</button></div>
+          <form id="${signup ? 'signupForm' : 'loginForm'}">
             ${message ? `<div class="error">${escapeHtml(message)}</div>` : ''}
-            <label for="loginEmail">회사 이메일</label>
-            <input id="loginEmail" type="email" autocomplete="username" required placeholder="name@company.com" />
-            <label for="loginPassword">비밀번호</label>
-            <input id="loginPassword" type="password" autocomplete="current-password" required />
-            <button class="primary" type="submit">로그인</button>
+            ${signup ? `
+              <label for="signupName">한글 이름</label>
+              <input id="signupName" maxlength="20" autocomplete="name" required placeholder="예: 이성철" />
+              <label for="signupEmail">로그인 ID (회사 이메일)</label>
+              <input id="signupEmail" type="email" autocomplete="username" required placeholder="name@ysls.co.kr" />
+              <label for="signupPassword">비밀번호</label>
+              <input id="signupPassword" type="password" minlength="8" autocomplete="new-password" required placeholder="8자 이상" />
+              <label for="signupPasswordConfirm">비밀번호 확인</label>
+              <input id="signupPasswordConfirm" type="password" minlength="8" autocomplete="new-password" required />
+              <button class="primary" type="submit">가입 신청</button>
+            ` : `
+              <label for="loginEmail">로그인 ID (회사 이메일)</label>
+              <input id="loginEmail" type="email" autocomplete="username" required placeholder="name@ysls.co.kr" />
+              <label for="loginPassword">비밀번호</label>
+              <input id="loginPassword" type="password" autocomplete="current-password" required />
+              <button class="primary" type="submit">로그인</button>
+            `}
           </form>
-          <p class="login-note">등록된 직원 계정만 이용할 수 있습니다. 공식 시험기록과 결과는 LIMS 및 관련 기록서에서 관리합니다.</p>
+          <p class="login-note">${signup ? '회사 이메일 인증 및 관리자 승인 후 이용할 수 있습니다.' : '승인된 직원 계정만 이용할 수 있습니다.'} 공식 시험기록과 결과는 LIMS 및 관련 기록서에서 관리합니다.</p>
         </section>
       </main>`
+
+    document.querySelector('#showLogin').onclick = () => renderLogin('', 'login')
+    document.querySelector('#showSignup').onclick = () => renderLogin('', 'signup')
+    if (signup) {
+      document.querySelector('#signupForm').onsubmit = submitSignup
+      return
+    }
 
     document.querySelector('#loginForm').onsubmit = async (event) => {
       event.preventDefault()
@@ -106,12 +128,40 @@ function startApp() {
     }
   }
 
+  async function submitSignup(event) {
+    event.preventDefault()
+    const name = document.querySelector('#signupName').value.trim()
+    const email = document.querySelector('#signupEmail').value.trim().toLowerCase()
+    const password = document.querySelector('#signupPassword').value
+    const confirmPassword = document.querySelector('#signupPasswordConfirm').value
+    if (!/^[가-힣]{2,10}$/.test(name)) return renderLogin('한글 이름을 2~10자로 입력해 주세요.', 'signup')
+    if (!email.endsWith('@ysls.co.kr')) return renderLogin('회사 이메일(@ysls.co.kr)만 가입할 수 있습니다.', 'signup')
+    if (password.length < 8) return renderLogin('비밀번호는 8자 이상이어야 합니다.', 'signup')
+    if (password !== confirmPassword) return renderLogin('비밀번호 확인이 일치하지 않습니다.', 'signup')
+
+    const button = event.currentTarget.querySelector('[type="submit"]')
+    button.disabled = true
+    button.textContent = '가입 신청 중…'
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { display_name: name } },
+    })
+    if (error) {
+      const duplicate = /already|registered|exists/i.test(error.message)
+      renderLogin(duplicate ? '이미 가입된 이메일입니다.' : '가입 신청에 실패했습니다. 입력 내용을 확인해 주세요.', 'signup')
+      return
+    }
+    if (data.session) await supabase.auth.signOut()
+    renderLogin('가입 신청이 완료되었습니다. 이메일 인증 후 관리자 승인을 기다려 주세요.')
+  }
+
   function renderWorkspace() {
     const admin = state.profile.role === 'admin'
     app.innerHTML = `
       <header class="topbar">
         <div class="brand"><span class="brand-mark">QC</span><span>QC Team Workboard</span><span class="brand-sub">제품분석1팀 · Schedule</span></div>
-        <div class="account"><span class="account-name">${escapeHtml(state.profile.display_name)}</span><span class="role-badge">${admin ? '관리자' : '사용자'}</span><button id="logout" class="secondary">로그아웃</button></div>
+        <div class="account"><span class="account-name">${escapeHtml(state.profile.display_name)} <small>${escapeHtml(state.profile.email)}</small></span><span class="role-badge">${admin ? '관리자' : '사용자'}</span>${admin ? '<button id="manageUsers" class="secondary">사용자 관리</button>' : ''}<button id="logout" class="secondary">로그아웃</button></div>
       </header>
       <main>
         <section class="heading">
@@ -158,6 +208,10 @@ function startApp() {
           <div class="modal-actions"><button type="button" class="danger hidden" id="deleteTask">삭제</button><div class="actions-right"><button type="button" class="secondary" id="cancelDialog">취소</button><button type="submit" class="primary">저장</button></div></div>
         </form>
       </dialog>
+      ${admin ? `<dialog id="userDialog" class="user-dialog">
+        <div class="modal-head"><div><h2>사용자 관리</h2><p>가입 승인, 한글 이름, 권한과 일정표 표시 순서를 관리합니다.</p></div><button class="close" id="closeUsers" aria-label="닫기">×</button></div>
+        <div class="user-admin-body"><div id="userAdminList" class="user-admin-list"><div class="loading">사용자 목록을 불러오는 중입니다…</div></div></div>
+      </dialog>` : ''}
       <div class="toast" id="toast"></div>`
 
     bindWorkspaceEvents()
@@ -171,6 +225,10 @@ function startApp() {
     document.querySelector('#cancelDialog').onclick = closeDialog
     document.querySelector('#taskForm').onsubmit = saveTask
     document.querySelector('#deleteTask').onclick = deleteTask
+    if (state.profile.role === 'admin') {
+      document.querySelector('#manageUsers').onclick = openUserManager
+      document.querySelector('#closeUsers').onclick = () => document.querySelector('#userDialog').close()
+    }
     document.querySelector('#search').oninput = renderBoard
     document.querySelector('#statusFilter').onchange = renderBoard
     document.querySelector('#focusDate').value = state.selectedDate
@@ -238,6 +296,80 @@ function startApp() {
     }
     state.tasks = data
     renderBoard()
+  }
+
+  async function openUserManager() {
+    document.querySelector('#userDialog').showModal()
+    await refreshUserManager()
+  }
+
+  async function refreshUserManager() {
+    const { data, error } = await supabase.from('profiles').select('*').order('display_order').order('display_name')
+    if (error) {
+      document.querySelector('#userAdminList').innerHTML = '<div class="error">사용자 목록을 불러오지 못했습니다.</div>'
+      return
+    }
+    state.adminProfiles = data
+    renderUserManager()
+  }
+
+  function renderUserManager() {
+    const list = document.querySelector('#userAdminList')
+    list.innerHTML = `
+      <div class="user-row user-row-head"><span>순서</span><span>한글 이름 / 로그인 ID</span><span>권한</span><span>상태</span><span>저장</span></div>
+      ${state.adminProfiles.map((profile, index) => `
+        <div class="user-row" data-user-id="${profile.id}">
+          <div class="order-buttons"><button class="secondary" data-move="up" ${index === 0 ? 'disabled' : ''} aria-label="위로">▲</button><button class="secondary" data-move="down" ${index === state.adminProfiles.length - 1 ? 'disabled' : ''} aria-label="아래로">▼</button></div>
+          <div><input class="user-name-input" maxlength="20" value="${escapeHtml(profile.display_name)}" aria-label="한글 이름" /><small>${escapeHtml(profile.email)}</small></div>
+          <select class="user-role" ${profile.id === state.profile.id ? 'disabled' : ''}><option value="user" ${profile.role === 'user' ? 'selected' : ''}>사용자</option><option value="admin" ${profile.role === 'admin' ? 'selected' : ''}>관리자</option></select>
+          <label class="active-toggle"><input class="user-active" type="checkbox" ${profile.is_active ? 'checked' : ''} ${profile.id === state.profile.id ? 'disabled' : ''} /><span>${profile.is_active ? '사용 중' : '승인 대기'}</span></label>
+          <button class="primary" data-save-user>저장</button>
+        </div>`).join('')}`
+
+    list.querySelectorAll('[data-move]').forEach((button) => {
+      button.onclick = () => moveUser(button.closest('.user-row').dataset.userId, button.dataset.move)
+    })
+    list.querySelectorAll('[data-save-user]').forEach((button) => {
+      button.onclick = () => saveUser(button.closest('.user-row'))
+    })
+    list.querySelectorAll('.user-active').forEach((input) => {
+      input.onchange = () => { input.nextElementSibling.textContent = input.checked ? '사용 중' : '승인 대기' }
+    })
+  }
+
+  async function saveUser(row) {
+    const id = row.dataset.userId
+    const name = row.querySelector('.user-name-input').value.trim()
+    if (!/^[가-힣]{2,10}$/.test(name)) return toast('한글 이름을 2~10자로 입력해 주세요.')
+    const payload = {
+      display_name: name,
+      role: row.querySelector('.user-role').value,
+      is_active: row.querySelector('.user-active').checked,
+    }
+    const button = row.querySelector('[data-save-user]')
+    button.disabled = true
+    const { error } = await supabase.from('profiles').update(payload).eq('id', id)
+    button.disabled = false
+    if (error) return toast('사용자 정보를 저장하지 못했습니다.')
+    toast('사용자 정보를 저장했습니다.')
+    await loadData()
+    await refreshUserManager()
+  }
+
+  async function moveUser(id, direction) {
+    const index = state.adminProfiles.findIndex((profile) => profile.id === id)
+    const targetIndex = direction === 'up' ? index - 1 : index + 1
+    if (index < 0 || targetIndex < 0 || targetIndex >= state.adminProfiles.length) return
+    const reordered = [...state.adminProfiles]
+    ;[reordered[index], reordered[targetIndex]] = [reordered[targetIndex], reordered[index]]
+    const results = await Promise.all(reordered.map((profile, order) =>
+      supabase.from('profiles').update({ display_order: order + 1 }).eq('id', profile.id)
+    ))
+    if (results.some((result) => result.error)) return toast('표시 순서를 저장하지 못했습니다.')
+    state.adminProfiles = reordered.map((profile, order) => ({ ...profile, display_order: order + 1 }))
+    renderUserManager()
+    await loadData()
+    toast('표시 순서를 변경했습니다.')
   }
 
   function fillEmployeeOptions() {
