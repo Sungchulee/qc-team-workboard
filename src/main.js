@@ -67,7 +67,7 @@ function startApp() {
     }
     if (!profile.is_active) {
       await supabase.auth.signOut()
-      renderLogin('가입 승인 대기 중이거나 비활성화된 계정입니다. 관리자에게 문의해 주세요.')
+      renderLogin('사용이 중지된 계정입니다. 관리자에게 문의해 주세요.')
       return
     }
 
@@ -103,7 +103,7 @@ function startApp() {
               <button class="primary" type="submit">로그인</button>
             `}
           </form>
-          <p class="login-note">${signup ? '회사 이메일 인증 및 관리자 승인 후 이용할 수 있습니다.' : '승인된 직원 계정만 이용할 수 있습니다.'} 공식 시험기록과 결과는 LIMS 및 관련 기록서에서 관리합니다.</p>
+          <p class="login-note">${signup ? '회사 이메일 인증 후 바로 이용할 수 있습니다.' : '등록된 직원 계정만 이용할 수 있습니다.'} 공식 시험기록과 결과는 LIMS 및 관련 기록서에서 관리합니다.</p>
         </section>
       </main>`
 
@@ -153,7 +153,7 @@ function startApp() {
       return
     }
     if (data.session) await supabase.auth.signOut()
-    renderLogin('가입 신청이 완료되었습니다. 이메일 인증 후 관리자 승인을 기다려 주세요.')
+    renderLogin('회원가입이 완료되었습니다. 이메일 인증 후 로그인해 주세요.')
   }
 
   function renderWorkspace() {
@@ -209,7 +209,7 @@ function startApp() {
         </form>
       </dialog>
       ${admin ? `<dialog id="userDialog" class="user-dialog">
-        <div class="modal-head"><div><h2>사용자 관리</h2><p>가입 승인, 한글 이름, 권한과 일정표 표시 순서를 관리합니다.</p></div><button class="close" id="closeUsers" aria-label="닫기">×</button></div>
+        <div class="modal-head"><div><h2>사용자 관리</h2><p>한글 이름, 권한, 사용 상태와 일정표 표시 순서를 관리합니다.</p></div><button class="close" id="closeUsers" aria-label="닫기">×</button></div>
         <div class="user-admin-body"><div id="userAdminList" class="user-admin-list"><div class="loading">사용자 목록을 불러오는 중입니다…</div></div></div>
       </dialog>` : ''}
       <div class="toast" id="toast"></div>`
@@ -322,7 +322,7 @@ function startApp() {
           <div class="order-buttons"><button class="secondary" data-move="up" ${index === 0 ? 'disabled' : ''} aria-label="위로">▲</button><button class="secondary" data-move="down" ${index === state.adminProfiles.length - 1 ? 'disabled' : ''} aria-label="아래로">▼</button></div>
           <div><input class="user-name-input" maxlength="20" value="${escapeHtml(profile.display_name)}" aria-label="한글 이름" /><small>${escapeHtml(profile.email)}</small></div>
           <select class="user-role" ${profile.id === state.profile.id ? 'disabled' : ''}><option value="user" ${profile.role === 'user' ? 'selected' : ''}>사용자</option><option value="admin" ${profile.role === 'admin' ? 'selected' : ''}>관리자</option></select>
-          <label class="active-toggle"><input class="user-active" type="checkbox" ${profile.is_active ? 'checked' : ''} ${profile.id === state.profile.id ? 'disabled' : ''} /><span>${profile.is_active ? '사용 중' : '승인 대기'}</span></label>
+          <label class="active-toggle"><input class="user-active" type="checkbox" ${profile.is_active ? 'checked' : ''} ${profile.id === state.profile.id ? 'disabled' : ''} /><span>${profile.is_active ? '사용 중' : '사용 중지'}</span></label>
           <button class="primary" data-save-user>저장</button>
         </div>`).join('')}`
 
@@ -333,7 +333,7 @@ function startApp() {
       button.onclick = () => saveUser(button.closest('.user-row'))
     })
     list.querySelectorAll('.user-active').forEach((input) => {
-      input.onchange = () => { input.nextElementSibling.textContent = input.checked ? '사용 중' : '승인 대기' }
+      input.onchange = () => { input.nextElementSibling.textContent = input.checked ? '사용 중' : '사용 중지' }
     })
   }
 

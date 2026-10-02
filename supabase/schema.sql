@@ -8,7 +8,7 @@ create table if not exists public.profiles (
   email text not null unique,
   display_name text not null,
   role text not null default 'user' check (role in ('admin', 'user')),
-  is_active boolean not null default false,
+  is_active boolean not null default true,
   display_order integer not null default 100,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -78,7 +78,7 @@ begin
 
   select coalesce(max(display_order), 0) + 1 into next_order from public.profiles;
   insert into public.profiles (id, email, display_name, role, is_active, display_order)
-  values (new.id, lower(new.email), requested_name, 'user', false, next_order)
+  values (new.id, lower(new.email), requested_name, 'user', true, next_order)
   on conflict (id) do nothing;
   return new;
 end;
