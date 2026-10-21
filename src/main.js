@@ -29,6 +29,11 @@ function startApp() {
     tasks: [],
     personTasks: [],
     personTaskProfileId: null,
+    personTaskRequestId: 0,
+    completedCount: 0,
+    completedExpanded: false,
+    completedLoading: false,
+    completedLoadError: false,
     reopenPersonTasks: false,
     weekStart: mondayOf(new Date()),
     selectedDate: iso(new Date()),
@@ -526,10 +531,16 @@ function startApp() {
     })
   }
 
-  async function openPersonTasks(profileId) {
+  async function openPersonTasks(profileId, keepCompletedOpen = false) {
     const profile = state.profiles.find((item) => item.id === profileId)
     if (!profile) return
+    const requestId = ++state.personTaskRequestId
     state.personTaskProfileId = profileId
+    state.personTasks = []
+    state.completedCount = 0
+    state.completedExpanded = keepCompletedOpen
+    state.completedLoading = false
+    state.completedLoadError = false
     const dialog = document.querySelector('#personTasksDialog')
     document.querySelector('#personTasksTitle').textContent = `${profile.display_name}님의 전체 업무`
     document.querySelector('#personTasksBody').innerHTML = '<div class="loading">전체 업무를 불러오는 중입니다…</div>'
@@ -537,16 +548,60 @@ function startApp() {
     document.querySelector('#newBacklogTask').classList.toggle('hidden', !(state.profile.role === 'admin' || profileId === state.profile.id))
     if (!dialog.open) dialog.showModal()
 
-    const { data, error } = await supabase
-      .from('tasks')
-      .select('*')
+    const completedCountRequest = supabase.from('tasks')
+      .select('id', { count: 'exact', head: true })
       .eq('assignee_id', profileId)
-      .order('updated_at', { ascending: false })
-    if (error) {
+      .eq('status', 'done')
+    const activeTasks = []
+    let activeError = null
+    for (let offset = 0; ; offset += 500) {
+      const { data, error } = await supabase.from('tasks')
+        .select('*')
+        .eq('assignee_id', profileId)
+        .neq('status', 'done')
+        .order('updated_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(offset, offset + 499)
+      if (requestId !== state.personTaskRequestId) return
+      if (error) { activeError = error; break }
+      activeTasks.push(...data)
+      if (data.length < 500) break
+    }
+    const { count, error: countError } = await completedCountRequest
+    if (requestId !== state.personTaskRequestId) return
+    if (activeError || countError) {
       document.querySelector('#personTasksBody').innerHTML = '<div class="error">전체 업무를 불러오지 못했습니다.</div>'
       return
     }
-    state.personTasks = data
+    state.personTasks = activeTasks
+    state.completedCount = count || 0
+    renderPersonTasks()
+    if (state.completedExpanded && state.completedCount) await loadCompletedTasks()
+  }
+
+  async function loadCompletedTasks() {
+    if (state.completedLoading || !state.completedExpanded) return
+    const requestId = state.personTaskRequestId
+    const offset = state.personTasks.filter((task) => task.status === 'done').length
+    if (offset >= state.completedCount) return
+    state.completedLoading = true
+    state.completedLoadError = false
+    renderPersonTasks()
+    const { data, error } = await supabase.from('tasks')
+      .select('*')
+      .eq('assignee_id', state.personTaskProfileId)
+      .eq('status', 'done')
+      .order('updated_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(offset, offset + 19)
+    if (requestId !== state.personTaskRequestId) return
+    state.completedLoading = false
+    if (error) {
+      state.completedLoadError = true
+      toast('완료 업무를 불러오지 못했습니다.')
+    } else {
+      state.personTasks.push(...data)
+    }
     renderPersonTasks()
   }
 
@@ -555,18 +610,32 @@ function startApp() {
     const scheduled = state.personTasks
       .filter((task) => task.scheduled_date && task.status !== 'done')
       .sort((a, b) => a.scheduled_date.localeCompare(b.scheduled_date))
-    const completed = state.personTasks
-      .filter((task) => task.status === 'done')
-      .sort((a, b) => (b.scheduled_date || '').localeCompare(a.scheduled_date || ''))
+    const completed = state.personTasks.filter((task) => task.status === 'done')
     document.querySelector('#personTaskCounts').innerHTML = `
       <span><b>${unscheduled.length}</b> 날짜 미정</span>
       <span><b>${scheduled.length}</b> 일정 배정</span>
-      <span><b>${completed.length}</b> 완료</span>`
+      <span><b>${state.completedCount}</b> 완료</span>`
     document.querySelector('#personTasksBody').innerHTML = [
       personTaskSection('날짜 미정 업무', '주간 일정에 아직 배정하지 않은 업무입니다.', unscheduled, '보관된 업무가 없습니다.'),
       personTaskSection('일정 배정 업무', '예정일이 지정되어 주간업무에 표시되는 업무입니다.', scheduled, '배정된 업무가 없습니다.'),
-      personTaskSection('완료 업무', '완료 처리된 업무입니다.', completed, '완료된 업무가 없습니다.'),
+      `<section class="person-task-section">
+        <div class="person-task-section-head">
+          <div><button type="button" id="toggleCompleted" class="completed-toggle" aria-expanded="${state.completedExpanded}">${state.completedExpanded ? '▾' : '▸'} 완료 업무</button><p>필요할 때 최근 변경된 업무부터 20건씩 확인합니다.</p></div>
+          <span>${state.completedCount}건</span>
+        </div>
+        ${state.completedExpanded ? `<div class="person-task-list">
+          ${completed.length ? completed.map(personTaskHtml).join('') : state.completedLoading ? '<div class="person-task-empty">불러오는 중…</div>' : state.completedLoadError ? '<div class="person-task-empty">완료 업무를 불러오지 못했습니다. 다시 시도해 주세요.</div>' : state.completedCount ? '' : '<div class="person-task-empty">완료된 업무가 없습니다.</div>'}
+          ${completed.length < state.completedCount ? `<button type="button" id="moreCompleted" class="secondary person-task-more" ${state.completedLoading ? 'disabled' : ''}>${state.completedLoading ? '불러오는 중…' : state.completedLoadError ? '다시 시도' : `더 보기 (${completed.length} / ${state.completedCount})`}</button>` : ''}
+        </div>` : ''}
+      </section>`,
     ].join('')
+    document.querySelector('#toggleCompleted').onclick = () => {
+      state.completedExpanded = !state.completedExpanded
+      renderPersonTasks()
+      if (state.completedExpanded && !completed.length) loadCompletedTasks()
+    }
+    const moreCompleted = document.querySelector('#moreCompleted')
+    if (moreCompleted) moreCompleted.onclick = loadCompletedTasks
     document.querySelectorAll('[data-person-task-id]').forEach((element) => {
       element.onclick = () => openTask(element.dataset.personTaskId, true)
       element.onkeydown = (event) => {
@@ -662,7 +731,7 @@ function startApp() {
     await loadTasks()
     if (state.reopenPersonTasks && state.personTaskProfileId) {
       state.reopenPersonTasks = false
-      await openPersonTasks(state.personTaskProfileId)
+      await openPersonTasks(state.personTaskProfileId, state.completedExpanded)
     }
   }
 
@@ -676,7 +745,7 @@ function startApp() {
     await loadTasks()
     if (state.reopenPersonTasks && state.personTaskProfileId) {
       state.reopenPersonTasks = false
-      await openPersonTasks(state.personTaskProfileId)
+      await openPersonTasks(state.personTaskProfileId, state.completedExpanded)
     }
   }
 
@@ -684,7 +753,7 @@ function startApp() {
     document.querySelector('#taskDialog').close()
     if (reopenPerson && state.reopenPersonTasks && state.personTaskProfileId) {
       state.reopenPersonTasks = false
-      openPersonTasks(state.personTaskProfileId)
+      openPersonTasks(state.personTaskProfileId, state.completedExpanded)
     }
   }
 

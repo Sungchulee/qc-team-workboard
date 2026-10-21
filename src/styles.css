@@ -186,7 +186,10 @@ dialog::backdrop { background: #0f172a99; }
 .person-task-section-head h3 { margin: 0; font-size: 16px; }
 .person-task-section-head p { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
 .person-task-section-head > span { flex: 0 0 auto; color: var(--muted); font-size: 12px; font-weight: 750; }
+.completed-toggle { border: 0; padding: 0; background: transparent; color: var(--navy); font: inherit; font-size: 16px; font-weight: 800; cursor: pointer; }
+.completed-toggle:hover, .completed-toggle:focus-visible { color: var(--blue); text-decoration: underline; text-underline-offset: 3px; }
 .person-task-list { display: grid; gap: 7px; }
+.person-task-more { justify-self: center; min-width: 180px; margin-top: 4px; }
 .person-task-item { display: grid; grid-template-columns: minmax(220px, 1fr) auto; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid var(--line); border-left: 4px solid var(--blue); border-radius: 10px; background: white; cursor: pointer; }
 .person-task-item:hover, .person-task-item:focus { border-color: #9dbbea; box-shadow: 0 4px 14px #1e3a5f14; outline: none; }
 .person-task-item.working { border-left-color: var(--amber); }
