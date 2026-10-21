@@ -28,6 +28,8 @@ function startApp() {
     adminProfiles: [],
     tasks: [],
     personTasks: [],
+    personRoutines: [],
+    routineLoadError: false,
     personTaskProfileId: null,
     personTaskRequestId: 0,
     completedCount: 0,
@@ -220,12 +222,22 @@ function startApp() {
         </form>
       </dialog>
       <dialog id="personTasksDialog" class="person-tasks-dialog">
-        <div class="modal-head"><div><h2 id="personTasksTitle">담당자 전체 업무</h2><p>날짜가 정해지지 않은 업무와 일정에 배정된 업무를 함께 확인합니다.</p></div><button class="close" id="closePersonTasks" aria-label="닫기">×</button></div>
+        <div class="modal-head"><div><h2 id="personTasksTitle">담당자 전체 업무</h2><p>매일 루틴 업무, 날짜 미정 업무와 일정에 배정된 업무를 함께 확인합니다.</p></div><button class="close" id="closePersonTasks" aria-label="닫기">×</button></div>
         <div class="person-tasks-toolbar">
           <div class="person-task-counts" id="personTaskCounts"></div>
-          <button class="primary hidden" id="newBacklogTask">+ 날짜 미정 업무 등록</button>
+          <div class="person-task-actions"><button class="secondary hidden" id="newRoutine">+ 매일 루틴 등록</button><button class="primary hidden" id="newBacklogTask">+ 날짜 미정 업무 등록</button></div>
         </div>
         <div class="person-tasks-body" id="personTasksBody"><div class="loading">전체 업무를 불러오는 중입니다…</div></div>
+      </dialog>
+      <dialog id="routineDialog">
+        <div class="modal-head"><h2 id="routineDialogTitle">매일 루틴 등록</h2><button class="close" id="closeRoutine" aria-label="닫기">×</button></div>
+        <form class="form" id="routineForm">
+          <input type="hidden" id="routineId" />
+          <div class="field"><label for="routineTitle">업무명</label><input id="routineTitle" maxlength="200" required placeholder="예: 매일 장비 상태 확인" /></div>
+          <div class="field routine-details"><label for="routineDetails">업무 내용</label><textarea id="routineDetails" maxlength="2000" placeholder="반복해서 수행할 내용을 적어 주세요."></textarea></div>
+          <div id="routineError" class="error hidden"></div>
+          <div class="modal-actions"><button type="button" class="danger hidden" id="deleteRoutine">삭제</button><div class="actions-right"><button type="button" class="secondary" id="cancelRoutine">취소</button><button type="submit" class="primary">저장</button></div></div>
+        </form>
       </dialog>
       ${admin ? `<dialog id="userDialog" class="user-dialog">
         <div class="modal-head"><div><h2>사용자 관리</h2><p>한글 이름, 권한, 사용 상태와 일정표 표시 순서를 관리합니다.</p></div><button class="close" id="closeUsers" aria-label="닫기">×</button></div>
@@ -245,6 +257,12 @@ function startApp() {
     document.querySelector('#taskForm').onsubmit = saveTask
     document.querySelector('#deleteTask').onclick = deleteTask
     document.querySelector('#closePersonTasks').onclick = () => document.querySelector('#personTasksDialog').close()
+    document.querySelector('#newRoutine').onclick = () => openRoutine()
+    document.querySelector('#closeRoutine').onclick = closeRoutineDialog
+    document.querySelector('#cancelRoutine').onclick = closeRoutineDialog
+    document.querySelector('#routineDialog').oncancel = (event) => { event.preventDefault(); closeRoutineDialog() }
+    document.querySelector('#routineForm').onsubmit = saveRoutine
+    document.querySelector('#deleteRoutine').onclick = deleteRoutine
     document.querySelector('#newBacklogTask').onclick = () => {
       const profileId = state.personTaskProfileId
       state.reopenPersonTasks = true
@@ -537,6 +555,8 @@ function startApp() {
     const requestId = ++state.personTaskRequestId
     state.personTaskProfileId = profileId
     state.personTasks = []
+    state.personRoutines = []
+    state.routineLoadError = false
     state.completedCount = 0
     state.completedExpanded = keepCompletedOpen
     state.completedLoading = false
@@ -545,7 +565,9 @@ function startApp() {
     document.querySelector('#personTasksTitle').textContent = `${profile.display_name}님의 전체 업무`
     document.querySelector('#personTasksBody').innerHTML = '<div class="loading">전체 업무를 불러오는 중입니다…</div>'
     document.querySelector('#personTaskCounts').innerHTML = ''
-    document.querySelector('#newBacklogTask').classList.toggle('hidden', !(state.profile.role === 'admin' || profileId === state.profile.id))
+    const canAdd = state.profile.role === 'admin' || profileId === state.profile.id
+    document.querySelector('#newRoutine').classList.toggle('hidden', !canAdd)
+    document.querySelector('#newBacklogTask').classList.toggle('hidden', !canAdd)
     if (!dialog.open) dialog.showModal()
 
     const completedCountRequest = supabase.from('tasks')
@@ -575,6 +597,14 @@ function startApp() {
     }
     state.personTasks = activeTasks
     state.completedCount = count || 0
+    const { data: routines, error: routineError } = await supabase.from('daily_routines')
+      .select('*')
+      .eq('assignee_id', profileId)
+      .order('created_at')
+      .order('id')
+    if (requestId !== state.personTaskRequestId) return
+    state.personRoutines = routines || []
+    state.routineLoadError = !!routineError
     renderPersonTasks()
     if (state.completedExpanded && state.completedCount) await loadCompletedTasks()
   }
@@ -612,10 +642,15 @@ function startApp() {
       .sort((a, b) => a.scheduled_date.localeCompare(b.scheduled_date))
     const completed = state.personTasks.filter((task) => task.status === 'done')
     document.querySelector('#personTaskCounts').innerHTML = `
+      <span><b>${state.personRoutines.length}</b> 매일 루틴</span>
       <span><b>${unscheduled.length}</b> 날짜 미정</span>
       <span><b>${scheduled.length}</b> 일정 배정</span>
       <span><b>${state.completedCount}</b> 완료</span>`
     document.querySelector('#personTasksBody').innerHTML = [
+      `<section class="person-task-section">
+        <div class="person-task-section-head"><div><h3>매일 루틴 업무</h3><p>날짜와 관계없이 매일 수행할 내용을 기록합니다.</p></div><span>${state.personRoutines.length}건</span></div>
+        <div class="person-task-list">${state.routineLoadError ? '<div class="person-task-empty">루틴 업무를 불러오지 못했습니다. 데이터베이스 설정을 확인해 주세요.</div>' : state.personRoutines.length ? state.personRoutines.map(routineHtml).join('') : '<div class="person-task-empty">등록된 매일 루틴 업무가 없습니다.</div>'}</div>
+      </section>`,
       personTaskSection('날짜 미정 업무', '주간 일정에 아직 배정하지 않은 업무입니다.', unscheduled, '보관된 업무가 없습니다.'),
       personTaskSection('일정 배정 업무', '예정일이 지정되어 주간업무에 표시되는 업무입니다.', scheduled, '배정된 업무가 없습니다.'),
       `<section class="person-task-section">
@@ -636,6 +671,12 @@ function startApp() {
     }
     const moreCompleted = document.querySelector('#moreCompleted')
     if (moreCompleted) moreCompleted.onclick = loadCompletedTasks
+    document.querySelectorAll('[data-routine-id]').forEach((element) => {
+      element.onclick = () => openRoutine(element.dataset.routineId)
+      element.onkeydown = (event) => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openRoutine(element.dataset.routineId) }
+      }
+    })
     document.querySelectorAll('[data-person-task-id]').forEach((element) => {
       element.onclick = () => openTask(element.dataset.personTaskId, true)
       element.onkeydown = (event) => {
@@ -657,6 +698,78 @@ function startApp() {
       <div class="person-task-main"><strong>${escapeHtml(task.title)}</strong><p>${escapeHtml(task.memo || '메모 없음')}</p></div>
       <div class="person-task-details"><span class="person-task-date ${task.scheduled_date ? '' : 'unscheduled'}">${dateLabel}</span><span class="chip">${statusName[task.status]}</span><span>${escapeHtml(task.category)}</span>${task.priority === 'high' ? '<span class="chip urgent">긴급</span>' : ''}</div>
     </article>`
+  }
+
+  function routineHtml(routine) {
+    return `<article class="person-task-item routine-item" data-routine-id="${routine.id}" tabindex="0">
+      <div class="person-task-main"><strong>${escapeHtml(routine.title)}</strong><p>${escapeHtml(routine.details || '업무 내용 없음')}</p></div>
+      <div class="person-task-details"><span class="chip">매일 반복</span></div>
+    </article>`
+  }
+
+  function openRoutine(id = '') {
+    const routine = id ? state.personRoutines.find((item) => item.id === id) : null
+    if (id && !routine) return
+    const editable = !routine || canModify(routine)
+    document.querySelector('#routineForm').reset()
+    document.querySelector('#routineId').value = routine?.id || ''
+    document.querySelector('#routineTitle').value = routine?.title || ''
+    document.querySelector('#routineDetails').value = routine?.details || ''
+    document.querySelector('#routineDialogTitle').textContent = routine ? editable ? '매일 루틴 수정' : '매일 루틴 보기' : '매일 루틴 등록'
+    document.querySelector('#deleteRoutine').classList.toggle('hidden', !routine || !editable)
+    document.querySelector('#routineForm [type="submit"]').classList.toggle('hidden', !editable)
+    document.querySelectorAll('#routineTitle, #routineDetails').forEach((field) => { field.disabled = !editable })
+    document.querySelector('#routineError').classList.add('hidden')
+    state.reopenPersonTasks = true
+    document.querySelector('#personTasksDialog').close()
+    document.querySelector('#routineDialog').showModal()
+  }
+
+  async function saveRoutine(event) {
+    event.preventDefault()
+    const id = document.querySelector('#routineId').value
+    const title = document.querySelector('#routineTitle').value.trim()
+    const details = document.querySelector('#routineDetails').value.trim()
+    const errorElement = document.querySelector('#routineError')
+    if (!title) {
+      errorElement.textContent = '업무명을 입력해 주세요.'
+      errorElement.classList.remove('hidden')
+      return
+    }
+    const submit = event.currentTarget.querySelector('[type="submit"]')
+    submit.disabled = true
+    const result = id
+      ? await supabase.from('daily_routines').update({ title, details }).eq('id', id)
+      : await supabase.from('daily_routines').insert({ assignee_id: state.personTaskProfileId, title, details, created_by: state.profile.id })
+    submit.disabled = false
+    if (result.error) {
+      errorElement.textContent = '루틴 업무를 저장하지 못했습니다. 권한 또는 데이터베이스 설정을 확인해 주세요.'
+      errorElement.classList.remove('hidden')
+      return
+    }
+    document.querySelector('#routineDialog').close()
+    toast(id ? '매일 루틴 업무를 수정했습니다.' : '매일 루틴 업무를 등록했습니다.')
+    state.reopenPersonTasks = false
+    await openPersonTasks(state.personTaskProfileId, state.completedExpanded)
+  }
+
+  async function deleteRoutine() {
+    const id = document.querySelector('#routineId').value
+    if (!id || !confirm('이 매일 루틴 업무를 삭제할까요?')) return
+    const { error } = await supabase.from('daily_routines').delete().eq('id', id)
+    if (error) return toast('매일 루틴 업무를 삭제하지 못했습니다.')
+    document.querySelector('#routineDialog').close()
+    toast('매일 루틴 업무를 삭제했습니다.')
+    state.reopenPersonTasks = false
+    await openPersonTasks(state.personTaskProfileId, state.completedExpanded)
+  }
+
+  function closeRoutineDialog() {
+    document.querySelector('#routineDialog').close()
+    if (state.reopenPersonTasks && state.personTaskProfileId) {
+      state.reopenPersonTasks = false
+      openPersonTasks(state.personTaskProfileId, state.completedExpanded)
+    }
   }
 
   function openNew(assignee = state.profile.id, date = state.period === 'day' ? state.selectedDate : iso(state.weekStart)) {

@@ -177,6 +177,7 @@ dialog::backdrop { background: #0f172a99; }
 
 .person-tasks-dialog { width: min(920px, calc(100vw - 24px)); }
 .person-tasks-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line); background: #f8fafc; }
+.person-task-actions { display: flex; gap: 7px; flex-wrap: wrap; }
 .person-task-counts { display: flex; gap: 8px; flex-wrap: wrap; }
 .person-task-counts span { padding: 7px 10px; border: 1px solid var(--line); border-radius: 999px; background: white; color: var(--muted); font-size: 12px; }
 .person-task-counts b { color: var(--navy); font-size: 14px; }
@@ -196,14 +197,17 @@ dialog::backdrop { background: #0f172a99; }
 .person-task-item.review { border-left-color: var(--purple); }
 .person-task-item.delay { border-left-color: var(--red); }
 .person-task-item.done { border-left-color: var(--green); opacity: .76; }
+.person-task-item.routine-item { border-left-color: var(--purple); }
 .person-task-main strong { display: block; margin-bottom: 3px; font-size: 14px; }
 .person-task-main p { margin: 0; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.routine-item .person-task-main p { white-space: pre-wrap; overflow-wrap: anywhere; }
 .person-task-details { display: flex; justify-content: flex-end; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--muted); font-size: 12px; }
 .person-task-date { min-width: 80px; color: #334155; font-weight: 750; text-align: right; }
 .person-task-date.unscheduled { color: var(--blue); }
 .chip.urgent { color: #b42318; background: #fff1f0; border-color: #fecaca; }
 .person-task-empty { padding: 18px; border: 1px dashed #cbd5e1; border-radius: 10px; color: #94a3b8; background: #fff; font-size: 13px; text-align: center; }
 .field label small { color: var(--muted); font-size: 11px; font-weight: 500; }
+.routine-details { margin-top: 14px; }
 
 @media (max-width: 900px) {
   .brand-sub, .role-badge, .account-name { display: none; }
@@ -221,6 +225,7 @@ dialog::backdrop { background: #0f172a99; }
   .user-row-head { display: none; }
   .user-row > select, .user-row > .active-toggle, .user-row > [data-save-user] { grid-column: 2; }
   .person-tasks-toolbar { align-items: stretch; flex-direction: column; }
+  .person-task-actions button { flex: 1; }
   .person-task-item { grid-template-columns: 1fr; gap: 8px; }
   .person-task-details { justify-content: flex-start; }
   .person-task-date { text-align: left; }
