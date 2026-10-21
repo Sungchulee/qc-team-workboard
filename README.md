@@ -8,6 +8,8 @@
 - 직원별·날짜별 주간 일정 보기
 - 선택 날짜의 전체 업무 보기
 - 업무 등록, 수정, 삭제
+- 담당자 이름을 클릭해 날짜 미정 업무, 일정 배정 업무, 완료 업무 조회
+- 날짜 미정 업무 등록 후 예정일을 지정해 주간 일정으로 이동
 - 업무 카드 드래그로 날짜와 담당자 변경
 - 상태 및 검색 필터
 - 관리자/일반 사용자 권한 분리
@@ -42,3 +44,7 @@ npm run build
 ## 데이터베이스
 
 `supabase/schema.sql`을 Supabase SQL Editor에서 실행합니다. 직원 계정은 Supabase Dashboard의 Authentication > Users에서 생성합니다.
+
+기존 운영 데이터베이스에는 배포 전에 `supabase/migrations/20261021_task_backlog.sql`을
+Supabase SQL Editor에서 한 번 실행합니다. 기존 업무 데이터는 삭제되지 않으며,
+`tasks.scheduled_date`에 NULL을 허용해 날짜 미정 업무를 저장합니다.

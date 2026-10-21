@@ -27,6 +27,9 @@ function startApp() {
     profiles: [],
     adminProfiles: [],
     tasks: [],
+    personTasks: [],
+    personTaskProfileId: null,
+    reopenPersonTasks: false,
     weekStart: mondayOf(new Date()),
     selectedDate: iso(new Date()),
     period: 'week',
@@ -200,7 +203,7 @@ function startApp() {
           <input type="hidden" id="taskId" />
           <div class="form-grid">
             <div class="field"><label for="employee">담당자</label><select id="employee" required></select></div>
-            <div class="field"><label for="date">예정일</label><input type="date" id="date" required /></div>
+            <div class="field"><label for="date">예정일 <small>비워두면 업무 보관함에 저장</small></label><input type="date" id="date" /></div>
             <div class="field full"><label for="title">업무명</label><input id="title" maxlength="200" required placeholder="예: 시료 전처리" /></div>
             <div class="field"><label for="category">업무 구분</label><select id="category"><option>분석</option><option>문서</option><option>교육</option><option>회의</option><option>기타</option></select></div>
             <div class="field"><label for="status">진행상태</label><select id="status"><option value="plan">예정</option><option value="working">진행 중</option><option value="review">검토 대기</option><option value="delay">지연·이슈</option><option value="done">완료</option></select></div>
@@ -210,6 +213,14 @@ function startApp() {
           <div id="formError" class="error hidden"></div>
           <div class="modal-actions"><button type="button" class="danger hidden" id="deleteTask">삭제</button><div class="actions-right"><button type="button" class="secondary" id="cancelDialog">취소</button><button type="submit" class="primary">저장</button></div></div>
         </form>
+      </dialog>
+      <dialog id="personTasksDialog" class="person-tasks-dialog">
+        <div class="modal-head"><div><h2 id="personTasksTitle">담당자 전체 업무</h2><p>날짜가 정해지지 않은 업무와 일정에 배정된 업무를 함께 확인합니다.</p></div><button class="close" id="closePersonTasks" aria-label="닫기">×</button></div>
+        <div class="person-tasks-toolbar">
+          <div class="person-task-counts" id="personTaskCounts"></div>
+          <button class="primary hidden" id="newBacklogTask">+ 날짜 미정 업무 등록</button>
+        </div>
+        <div class="person-tasks-body" id="personTasksBody"><div class="loading">전체 업무를 불러오는 중입니다…</div></div>
       </dialog>
       ${admin ? `<dialog id="userDialog" class="user-dialog">
         <div class="modal-head"><div><h2>사용자 관리</h2><p>한글 이름, 권한, 사용 상태와 일정표 표시 순서를 관리합니다.</p></div><button class="close" id="closeUsers" aria-label="닫기">×</button></div>
@@ -224,10 +235,17 @@ function startApp() {
     document.querySelector('#logout').onclick = () => supabase.auth.signOut()
     document.querySelector('#refresh').onclick = loadData
     document.querySelector('#newTask').onclick = () => openNew()
-    document.querySelector('#closeDialog').onclick = closeDialog
-    document.querySelector('#cancelDialog').onclick = closeDialog
+    document.querySelector('#closeDialog').onclick = () => closeDialog()
+    document.querySelector('#cancelDialog').onclick = () => closeDialog()
     document.querySelector('#taskForm').onsubmit = saveTask
     document.querySelector('#deleteTask').onclick = deleteTask
+    document.querySelector('#closePersonTasks').onclick = () => document.querySelector('#personTasksDialog').close()
+    document.querySelector('#newBacklogTask').onclick = () => {
+      const profileId = state.personTaskProfileId
+      state.reopenPersonTasks = true
+      document.querySelector('#personTasksDialog').close()
+      openNew(profileId, '')
+    }
     if (state.profile.role === 'admin') {
       document.querySelector('#manageUsers').onclick = openUserManager
       document.querySelector('#closeUsers').onclick = () => document.querySelector('#userDialog').close()
@@ -425,8 +443,9 @@ function startApp() {
       const load = Math.min(100, profileTasks.length * 18)
       board.insertAdjacentHTML('beforeend', `
         <div class="cell person ${rowClass}">
-          <strong>${escapeHtml(profile.display_name)}</strong>
+          <button type="button" class="person-name" data-person-tasks="${profile.id}">${escapeHtml(profile.display_name)}</button>
           <span>${profile.role === 'admin' ? '관리자' : '사용자'} · ${profileTasks.length}건</span>
+          <small class="person-hint">전체 업무 보기 ›</small>
           <div class="load"><i style="width:${load}%"></i></div>
         </div>`)
 
@@ -459,6 +478,9 @@ function startApp() {
 
   function bindBoardEvents() {
     const board = document.querySelector('#board')
+    board.querySelectorAll('[data-person-tasks]').forEach((button) => {
+      button.onclick = () => openPersonTasks(button.dataset.personTasks)
+    })
     board.querySelectorAll('.task').forEach((element) => {
       element.onclick = () => { if (!state.suppressClick) openTask(element.dataset.id) }
       if (element.getAttribute('draggable') !== 'true') return
@@ -504,8 +526,73 @@ function startApp() {
     })
   }
 
+  async function openPersonTasks(profileId) {
+    const profile = state.profiles.find((item) => item.id === profileId)
+    if (!profile) return
+    state.personTaskProfileId = profileId
+    const dialog = document.querySelector('#personTasksDialog')
+    document.querySelector('#personTasksTitle').textContent = `${profile.display_name}님의 전체 업무`
+    document.querySelector('#personTasksBody').innerHTML = '<div class="loading">전체 업무를 불러오는 중입니다…</div>'
+    document.querySelector('#personTaskCounts').innerHTML = ''
+    document.querySelector('#newBacklogTask').classList.toggle('hidden', !(state.profile.role === 'admin' || profileId === state.profile.id))
+    if (!dialog.open) dialog.showModal()
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('assignee_id', profileId)
+      .order('updated_at', { ascending: false })
+    if (error) {
+      document.querySelector('#personTasksBody').innerHTML = '<div class="error">전체 업무를 불러오지 못했습니다.</div>'
+      return
+    }
+    state.personTasks = data
+    renderPersonTasks()
+  }
+
+  function renderPersonTasks() {
+    const unscheduled = state.personTasks.filter((task) => !task.scheduled_date && task.status !== 'done')
+    const scheduled = state.personTasks
+      .filter((task) => task.scheduled_date && task.status !== 'done')
+      .sort((a, b) => a.scheduled_date.localeCompare(b.scheduled_date))
+    const completed = state.personTasks
+      .filter((task) => task.status === 'done')
+      .sort((a, b) => (b.scheduled_date || '').localeCompare(a.scheduled_date || ''))
+    document.querySelector('#personTaskCounts').innerHTML = `
+      <span><b>${unscheduled.length}</b> 날짜 미정</span>
+      <span><b>${scheduled.length}</b> 일정 배정</span>
+      <span><b>${completed.length}</b> 완료</span>`
+    document.querySelector('#personTasksBody').innerHTML = [
+      personTaskSection('날짜 미정 업무', '주간 일정에 아직 배정하지 않은 업무입니다.', unscheduled, '보관된 업무가 없습니다.'),
+      personTaskSection('일정 배정 업무', '예정일이 지정되어 주간업무에 표시되는 업무입니다.', scheduled, '배정된 업무가 없습니다.'),
+      personTaskSection('완료 업무', '완료 처리된 업무입니다.', completed, '완료된 업무가 없습니다.'),
+    ].join('')
+    document.querySelectorAll('[data-person-task-id]').forEach((element) => {
+      element.onclick = () => openTask(element.dataset.personTaskId, true)
+      element.onkeydown = (event) => {
+        if (event.key === 'Enter' || event.key === ' ') openTask(element.dataset.personTaskId, true)
+      }
+    })
+  }
+
+  function personTaskSection(title, description, tasks, emptyText) {
+    return `<section class="person-task-section">
+      <div class="person-task-section-head"><div><h3>${title}</h3><p>${description}</p></div><span>${tasks.length}건</span></div>
+      <div class="person-task-list">${tasks.length ? tasks.map(personTaskHtml).join('') : `<div class="person-task-empty">${emptyText}</div>`}</div>
+    </section>`
+  }
+
+  function personTaskHtml(task) {
+    const dateLabel = task.scheduled_date ? formatIsoDate(task.scheduled_date) : '날짜 미정'
+    return `<article class="person-task-item ${task.status}" data-person-task-id="${task.id}" tabindex="0">
+      <div class="person-task-main"><strong>${escapeHtml(task.title)}</strong><p>${escapeHtml(task.memo || '메모 없음')}</p></div>
+      <div class="person-task-details"><span class="person-task-date ${task.scheduled_date ? '' : 'unscheduled'}">${dateLabel}</span><span class="chip">${statusName[task.status]}</span><span>${escapeHtml(task.category)}</span>${task.priority === 'high' ? '<span class="chip urgent">긴급</span>' : ''}</div>
+    </article>`
+  }
+
   function openNew(assignee = state.profile.id, date = state.period === 'day' ? state.selectedDate : iso(state.weekStart)) {
     const dialog = document.querySelector('#taskDialog')
+    setTaskFormReadOnly(false)
     document.querySelector('#taskForm').reset()
     document.querySelector('#taskId').value = ''
     document.querySelector('#employee').value = assignee
@@ -516,25 +603,34 @@ function startApp() {
     dialog.showModal()
   }
 
-  function openTask(id) {
-    const task = state.tasks.find((item) => item.id === id)
+  function openTask(id, fromPersonTasks = false) {
+    const task = state.tasks.find((item) => item.id === id) || state.personTasks.find((item) => item.id === id)
     if (!task) return
-    if (!canModify(task)) {
-      toast('조회만 가능한 일정입니다.')
-      return
-    }
+    const editable = canModify(task)
+    setTaskFormReadOnly(!editable)
     document.querySelector('#taskId').value = task.id
     document.querySelector('#employee').value = task.assignee_id
-    document.querySelector('#date').value = task.scheduled_date
+    if (fromPersonTasks) {
+      state.reopenPersonTasks = true
+      document.querySelector('#personTasksDialog').close()
+    }
+    document.querySelector('#date').value = task.scheduled_date || ''
     document.querySelector('#title').value = task.title
     document.querySelector('#category').value = task.category
     document.querySelector('#status').value = task.status
     document.querySelector('#priority').value = task.priority
     document.querySelector('#memo').value = task.memo || ''
-    document.querySelector('#modalTitle').textContent = '업무 수정'
-    document.querySelector('#deleteTask').classList.remove('hidden')
+    document.querySelector('#modalTitle').textContent = editable ? '업무 수정' : '업무 보기'
+    document.querySelector('#deleteTask').classList.toggle('hidden', !editable)
     document.querySelector('#formError').classList.add('hidden')
     document.querySelector('#taskDialog').showModal()
+  }
+
+  function setTaskFormReadOnly(readOnly) {
+    document.querySelectorAll('#taskForm input:not([type="hidden"]), #taskForm select, #taskForm textarea').forEach((field) => {
+      field.disabled = readOnly
+    })
+    document.querySelector('#taskForm [type="submit"]').classList.toggle('hidden', readOnly)
   }
 
   async function saveTask(event) {
@@ -542,7 +638,7 @@ function startApp() {
     const id = document.querySelector('#taskId').value
     const payload = {
       assignee_id: document.querySelector('#employee').value,
-      scheduled_date: document.querySelector('#date').value,
+      scheduled_date: document.querySelector('#date').value || null,
       title: document.querySelector('#title').value.trim(),
       category: document.querySelector('#category').value,
       status: document.querySelector('#status').value,
@@ -561,9 +657,13 @@ function startApp() {
       error.classList.remove('hidden')
       return
     }
-    closeDialog()
+    closeDialog(false)
     toast(id ? '업무를 수정했습니다.' : '업무를 등록했습니다.')
     await loadTasks()
+    if (state.reopenPersonTasks && state.personTaskProfileId) {
+      state.reopenPersonTasks = false
+      await openPersonTasks(state.personTaskProfileId)
+    }
   }
 
   async function deleteTask() {
@@ -571,13 +671,21 @@ function startApp() {
     if (!id || !confirm('이 업무를 삭제할까요?')) return
     const { error } = await supabase.from('tasks').delete().eq('id', id)
     if (error) return toast('업무를 삭제하지 못했습니다.')
-    closeDialog()
+    closeDialog(false)
     toast('업무를 삭제했습니다.')
     await loadTasks()
+    if (state.reopenPersonTasks && state.personTaskProfileId) {
+      state.reopenPersonTasks = false
+      await openPersonTasks(state.personTaskProfileId)
+    }
   }
 
-  function closeDialog() {
+  function closeDialog(reopenPerson = true) {
     document.querySelector('#taskDialog').close()
+    if (reopenPerson && state.reopenPersonTasks && state.personTaskProfileId) {
+      state.reopenPersonTasks = false
+      openPersonTasks(state.personTaskProfileId)
+    }
   }
 
   function canModify(task) {
@@ -634,6 +742,11 @@ function formatDate(date) {
 
 function dayName(date) {
   return ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'][date.getDay()]
+}
+
+function formatIsoDate(value) {
+  const date = new Date(`${value}T12:00:00`)
+  return `${date.getMonth() + 1}/${date.getDate()} (${['일', '월', '화', '수', '목', '금', '토'][date.getDay()]})`
 }
 
 function escapeHtml(value = '') {
