@@ -25,6 +25,7 @@ function startApp() {
     session: null,
     profile: null,
     profiles: [],
+    selectedProfileIds: null,
     adminProfiles: [],
     tasks: [],
     personTasks: [],
@@ -56,6 +57,7 @@ function startApp() {
   })
 
   async function handleSession(session) {
+    if (session?.user?.id !== state.session?.user?.id) state.selectedProfileIds = null
     state.session = session
     if (!session) {
       state.profile = null
@@ -197,6 +199,13 @@ function startApp() {
           </div>
           <div class="tool-group">
             <div class="segmented"><button class="active" data-view="team">팀 전체</button><button data-view="mine">내 업무</button></div>
+            <details class="person-filter" id="personFilterMenu">
+              <summary id="personFilterLabel">담당자 선택</summary>
+              <div class="person-filter-panel">
+                <div class="person-filter-actions"><button type="button" id="personFilterAll">전체 선택</button><button type="button" id="personFilterMine">나만 선택</button></div>
+                <div id="personFilterOptions" class="person-filter-options"></div>
+              </div>
+            </details>
             <input class="search" id="search" placeholder="업무명·구분 검색" />
             <select class="filter" id="statusFilter"><option value="all">상태 전체</option><option value="plan">예정</option><option value="working">진행 중</option><option value="review">검토 대기</option><option value="delay">지연·이슈</option><option value="done">완료</option></select>
           </div>
@@ -307,6 +316,7 @@ function startApp() {
         document.querySelectorAll('[data-view]').forEach((item) => item.classList.remove('active'))
         button.classList.add('active')
         state.view = button.dataset.view
+        if (state.view === 'mine') document.querySelector('#personFilterMenu').open = false
         renderBoard()
       }
     })
@@ -321,8 +331,49 @@ function startApp() {
       .order('display_name')
     if (error) return toast('직원 목록을 불러오지 못했습니다.')
     state.profiles = profiles
+    if (state.selectedProfileIds === null) {
+      let saved = null
+      try { saved = JSON.parse(localStorage.getItem(`qc-workboard-people-${state.profile.id}`)) } catch { /* 저장값이 없으면 전체 표시 */ }
+      state.selectedProfileIds = new Set(Array.isArray(saved) ? saved : profiles.map((profile) => profile.id))
+    }
+    state.selectedProfileIds = new Set(profiles.filter((profile) => state.selectedProfileIds.has(profile.id)).map((profile) => profile.id))
+    renderPersonFilter()
     fillEmployeeOptions()
     await loadTasks()
+  }
+
+  function renderPersonFilter() {
+    document.querySelector('#personFilterOptions').innerHTML = state.profiles.map((profile) => `
+      <label class="person-filter-option"><input type="checkbox" value="${profile.id}" ${state.selectedProfileIds.has(profile.id) ? 'checked' : ''} /><span>${escapeHtml(profile.display_name)}</span></label>`).join('')
+    document.querySelectorAll('#personFilterOptions input').forEach((input) => {
+      input.onchange = () => {
+        if (input.checked) state.selectedProfileIds.add(input.value)
+        else state.selectedProfileIds.delete(input.value)
+        savePersonFilter()
+      }
+    })
+    document.querySelector('#personFilterAll').onclick = () => {
+      state.selectedProfileIds = new Set(state.profiles.map((profile) => profile.id))
+      savePersonFilter()
+    }
+    document.querySelector('#personFilterMine').onclick = () => {
+      state.selectedProfileIds = new Set([state.profile.id])
+      savePersonFilter()
+    }
+    syncPersonFilter()
+  }
+
+  function savePersonFilter() {
+    try { localStorage.setItem(`qc-workboard-people-${state.profile.id}`, JSON.stringify([...state.selectedProfileIds])) } catch { /* 저장할 수 없는 환경에서는 현재 화면에만 적용 */ }
+    syncPersonFilter()
+    renderBoard()
+  }
+
+  function syncPersonFilter() {
+    document.querySelector('#personFilterLabel').textContent = `담당자 선택 ${state.selectedProfileIds.size}/${state.profiles.length}`
+    document.querySelectorAll('#personFilterOptions input').forEach((input) => {
+      input.checked = state.selectedProfileIds.has(input.value)
+    })
   }
 
   async function loadTasks() {
@@ -436,8 +487,10 @@ function startApp() {
     const status = document.querySelector('#statusFilter').value
     const profiles = state.view === 'mine'
       ? state.profiles.filter((profile) => profile.id === state.profile.id)
-      : state.profiles
+      : state.profiles.filter((profile) => state.selectedProfileIds.has(profile.id))
+    const visibleProfileIds = new Set(profiles.map((profile) => profile.id))
     const filtered = state.tasks.filter((task) =>
+      visibleProfileIds.has(task.assignee_id) &&
       task.scheduled_date >= start &&
       task.scheduled_date <= end &&
       (status === 'all' || task.status === status) &&
@@ -454,11 +507,16 @@ function startApp() {
     document.querySelector('#focusDate').value = state.selectedDate
     document.querySelector('#dayView').classList.toggle('hidden', state.period === 'day')
     document.querySelector('#weekView').classList.toggle('hidden', state.period !== 'day')
+    document.querySelector('#personFilterMenu').classList.toggle('hidden', state.view === 'mine')
     board.style.gridTemplateColumns = state.period === 'day' ? '175px minmax(380px, 1fr)' : '175px repeat(5, minmax(190px, 1fr))'
     board.style.minWidth = state.period === 'day' ? '580px' : '1125px'
 
     board.innerHTML = '<div class="cell head"><b>담당자</b><small>업무량</small></div>' +
       days.map((day) => `<div class="cell head ${iso(day) === today ? 'today-col' : ''}"><b>${dayName(day)}${iso(day) === today ? '<span class="today-badge">오늘</span>' : ''}</b><small>${day.getMonth() + 1}월 ${day.getDate()}일</small></div>`).join('')
+
+    if (!profiles.length) {
+      board.insertAdjacentHTML('beforeend', '<div class="empty-selection">표시할 담당자가 없습니다. 위의 ‘담당자 선택’에서 인원을 선택해 주세요.</div>')
+    }
 
     profiles.forEach((profile, rowIndex) => {
       const rowClass = rowIndex % 2 ? 'row-alt' : ''
