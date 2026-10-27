@@ -1,4 +1,4 @@
-# QC Team Workboard
+# Q-Flow (큐플로우)
 
 제품분석팀의 개인별 업무 일정을 공유하는 **Non-GMP 업무 보조 도구**입니다.
 

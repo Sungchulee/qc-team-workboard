@@ -9,7 +9,7 @@ if (!supabaseUrl || !supabaseKey) {
   app.innerHTML = `
     <main class="login-page">
       <section class="login-card setup-card">
-        <div class="logo"><span class="logo-mark">QC</span><div><h1>환경변수 설정 필요</h1><p>QC Team Workboard</p></div></div>
+        <div class="logo"><span class="logo-mark">Q</span><div><h1>환경변수 설정 필요</h1><p>Q-Flow (큐플로우)</p></div></div>
         <p>Vercel 프로젝트에 다음 환경변수 두 개를 등록해 주세요.</p>
         <code>VITE_SUPABASE_URL</code>
         <code>VITE_SUPABASE_PUBLISHABLE_KEY</code>
@@ -93,7 +93,7 @@ function startApp() {
     app.innerHTML = `
       <main class="login-page">
         <section class="login-card">
-          <div class="logo"><span class="logo-mark">QC</span><div><h1>QC Team Workboard</h1><p>제품분석1팀 · Non-GMP 업무 보조</p></div></div>
+          <div class="logo"><span class="logo-mark">Q</span><div><h1>Q-Flow (큐플로우)</h1><p>제품분석1팀 · Non-GMP 업무 보조</p></div></div>
           <div class="auth-tabs"><button id="showLogin" class="${signup ? '' : 'active'}" type="button">로그인</button><button id="showSignup" class="${signup ? 'active' : ''}" type="button">회원가입</button></div>
           <form id="${signup ? 'signupForm' : 'loginForm'}">
             ${message ? `<div class="error">${escapeHtml(message)}</div>` : ''}
@@ -175,7 +175,7 @@ function startApp() {
     const admin = state.profile.role === 'admin'
     app.innerHTML = `
       <header class="topbar">
-        <div class="brand"><span class="brand-mark">QC</span><span>QC Team Workboard</span><span class="brand-sub">제품분석1팀 · Schedule</span></div>
+        <div class="brand"><span class="brand-mark">Q</span><span>Q-Flow (큐플로우)</span><span class="brand-sub">제품분석1팀 · Schedule</span></div>
         <div class="account"><span class="account-name">${escapeHtml(state.profile.display_name)} <small>${escapeHtml(state.profile.email)}</small></span><span class="role-badge">${admin ? '관리자' : '사용자'}</span>${admin ? '<button id="manageUsers" class="secondary">사용자 관리</button>' : ''}<button id="logout" class="secondary">로그아웃</button></div>
       </header>
       <main>
